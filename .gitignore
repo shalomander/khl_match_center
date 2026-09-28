@@ -1,0 +1,9 @@
+.idea/
+.junie/
+.venv/
+.postgres/
+.redis/
+storage/
+logs/
+celerybeat-*
+.env
