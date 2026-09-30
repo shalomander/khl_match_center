@@ -15,6 +15,8 @@ logger = logging.getLogger()
 async def fetch_khl_seasons():
     async with SessionLocal() as session:
         async with SeasonsReader() as sr:
+            if sr.errors:
+                return
             season_svc = DbService(session, Season)
             tournament_svc = TournamentService(session)
             team_svc = DbService(session, Team)
