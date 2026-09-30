@@ -15,6 +15,7 @@ class SeasonsReader(KhlReader):
         self.api_payload = None
         self.source_page_url = f'https://{khl_domain}/calendar/'
         self.filters_api_url = f'https://{khl_domain}/rest/filters/calendar/'
+        self._current_tournament = None
         # source data
         self.filters_data = None
         self.season_filter_data = None
@@ -28,6 +29,9 @@ class SeasonsReader(KhlReader):
 
     async def _extract_data(self):
         filters = self.filters_data.get('LIST', {})
+        for t in filters.get('tournament', {}).get('VALUE', []):
+            if 'active' in t:
+                self._current_tournament = t['i']
         extract_season_coros = []
         for season in reversed(filters.get('season', {}).get('VALUE', [])):
             with suppress(Exception):
@@ -44,8 +48,11 @@ class SeasonsReader(KhlReader):
                 teams = api_data.get('data', {}).get('LIST', {}).get('clubs', {}).get('VALUE', [])
                 with suppress(Exception):
                     self._seasons[season]['tournaments'] = [
-                        {'id': int(t['i']), 'part': self.PART_MAP[t['name']]}
-                        for t in tournaments if t['name'] in self.PART_MAP
+                        {
+                            'id': int(t['i']),
+                            'part': self.PART_MAP[t['name']],
+                            'current': self._current_tournament == t['i']
+                        } for t in tournaments if t['name'] in self.PART_MAP
                     ]
                     self._seasons[season]['teams'] = [
                         {'id': int(t['i']), 'name': t['name'], 'logo': f"https:{t['logo']}"}
@@ -53,5 +60,6 @@ class SeasonsReader(KhlReader):
                     ]
 
     @property
-    def seasons(self)->list:
+    def seasons(self) -> list:
         return list(self._seasons.values())
+

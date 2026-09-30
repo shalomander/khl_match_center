@@ -29,7 +29,7 @@ services:
     environment: *api-env
     depends_on:
       - db
-      - redis
+#      - redis
 
   db:
     image: postgres:15

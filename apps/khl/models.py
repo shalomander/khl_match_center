@@ -1,7 +1,7 @@
 import datetime
 from typing import List
 
-from sqlalchemy import String, ForeignKey
+from sqlalchemy import String, ForeignKey, sql
 from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 
 from core.db.base import Base
@@ -96,6 +96,7 @@ class Tournament(Base):
         index=True
     )
     part: Mapped[str] = mapped_column(index=True, nullable=False)
+    current: Mapped[bool] = mapped_column(index=True, nullable=False, server_default=sql.false())
 
     season: Mapped["Season"] = relationship(
         "Season",
