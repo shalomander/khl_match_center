@@ -183,6 +183,9 @@ class Game(Base):
     khl_id: Mapped[int] = mapped_column(primary_key=True)
     start_at: Mapped[datetime.datetime] = mapped_column(index=True, nullable=True)
     finish_at: Mapped[datetime.datetime] = mapped_column(index=True, nullable=True)
+    home_score: Mapped[int] = mapped_column(nullable=True)
+    visitor_score: Mapped[int] = mapped_column(nullable=True)
+    ots: Mapped[str] = mapped_column(String(2), nullable=True)
     tournament_id: Mapped[int] = mapped_column(
         ForeignKey("tournaments.khl_id", ondelete='SET NULL'),
         nullable=False,
