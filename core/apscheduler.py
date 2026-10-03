@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import inspect
 import logging
+from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -16,7 +17,10 @@ def autodiscover_tasks(scheduler:AsyncIOScheduler = None):
                 module = importlib.import_module(module_path)
                 for task in getattr(module, 'tasks', []):
                     try:
-                        scheduler.add_job(**task)
+                        scheduler.add_job(
+                            max_instances=1,
+                            **task
+                        )
                     except Exception as e:
                         logger.error(f'Ошибка добавления задачи: {repr(e)}')
 

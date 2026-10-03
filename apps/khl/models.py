@@ -89,7 +89,7 @@ class Tournament(Base):
     }
     __tablename__ = "tournaments"
 
-    khl_id: Mapped[int] = mapped_column(primary_key=True)
+    khl_id: Mapped[int] = mapped_column(primary_key=True, unique=True, autoincrement=False)
     season_id: Mapped[int] = mapped_column(
         ForeignKey("seasons.id", ondelete='SET NULL'),
         nullable=False,
@@ -103,7 +103,7 @@ class Tournament(Base):
         back_populates="tournaments",
         lazy="selectin"
     )
-    games: Mapped["Game"] = relationship(
+    games: Mapped[List["Game"]] = relationship(
         "Game",
         back_populates="tournament",
         lazy="selectin"
@@ -119,7 +119,7 @@ class Tournament(Base):
 class Team(Base):
     __tablename__ = "teams"
 
-    khl_id: Mapped[int] = mapped_column(primary_key=True)
+    khl_id: Mapped[int] = mapped_column(primary_key=True, unique=True, autoincrement=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     city: Mapped[str] = mapped_column(String(100), nullable=True)
     image: Mapped[str] = mapped_column(nullable=True)
@@ -166,8 +166,8 @@ class Team(Base):
 class Arena(Base):
     __tablename__ = "arenas"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    khl_id: Mapped[int] = mapped_column(primary_key=True, unique=True, autoincrement=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=True)
     city: Mapped[str] = mapped_column(String(255), nullable=True)
 
     games: Mapped["Game"] = relationship("Game", back_populates="arena", foreign_keys="Game.arena_id")
@@ -180,12 +180,14 @@ class Arena(Base):
 class Game(Base):
     __tablename__ = "games"
 
-    khl_id: Mapped[int] = mapped_column(primary_key=True)
+    khl_id: Mapped[int] = mapped_column(primary_key=True, unique=True, autoincrement=False)
     start_at: Mapped[datetime.datetime] = mapped_column(index=True, nullable=True)
     finish_at: Mapped[datetime.datetime] = mapped_column(index=True, nullable=True)
     home_score: Mapped[int] = mapped_column(nullable=True)
     visitor_score: Mapped[int] = mapped_column(nullable=True)
     ots: Mapped[str] = mapped_column(String(2), nullable=True)
+    is_over: Mapped[bool] = mapped_column(index=True, nullable=False, server_default=sql.false())
+
     tournament_id: Mapped[int] = mapped_column(
         ForeignKey("tournaments.khl_id", ondelete='SET NULL'),
         nullable=False,
@@ -202,7 +204,7 @@ class Game(Base):
         index=True
     )
     arena_id: Mapped[int] = mapped_column(
-        ForeignKey("arenas.id", ondelete='SET NULL'),
+        ForeignKey("arenas.khl_id", ondelete='SET NULL'),
         nullable=True,
         index=True
     )
