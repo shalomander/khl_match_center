@@ -1,4 +1,5 @@
 import logging
+from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import List
 
@@ -38,10 +39,11 @@ class GameService(DbService):
     async def update_from_calendar(self, games: List[dict]):
         dt = datetime.now()
         for game in games:
-            g = CalendarGame(**game)
-            too_old = g.is_over and g.start_at and g.start_at < dt - timedelta(days=2)
-            too_far = g.start_at and g.start_at > dt + timedelta(days=2)
-            if (too_old or too_far) and await self.exists(filter_by={'khl_id': g.khl_id}):
-                continue
-            obj, created = await self.update_or_create(khl_id=g.khl_id, defaults=g.model_dump())
-            logger.warning(f'Данные игры {obj.pk} {"добавлены" if created else "обновлены"} из календаря')
+            with suppress(Exception):
+                g = CalendarGame(**game)
+                too_old = g.is_over and g.start_at and g.start_at < dt - timedelta(days=2)
+                too_far = g.start_at and g.start_at > dt + timedelta(days=2)
+                if (too_old or too_far) and await self.exists(filter_by={'khl_id': g.khl_id}):
+                    continue
+                obj, created = await self.update_or_create(khl_id=g.khl_id, defaults=g.model_dump())
+                logger.warning(f'Данные игры {obj.pk} {"добавлены" if created else "обновлены"} из календаря')

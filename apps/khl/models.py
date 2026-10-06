@@ -1,7 +1,7 @@
 import datetime
 from typing import List
 
-from sqlalchemy import String, ForeignKey, sql
+from sqlalchemy import String, ForeignKey, sql, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship, backref
 
 from core.db.base import Base
@@ -38,12 +38,12 @@ class SeasonTeam(Base):
     team_id: Mapped[int] = mapped_column(
         ForeignKey("teams.khl_id", ondelete='SET NULL'),
         nullable=False,
-        index=True
+        # index=True
     )
     season_id: Mapped[int] = mapped_column(
         ForeignKey("seasons.id", ondelete='SET NULL'),
         nullable=False,
-        index=True
+        # index=True
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     image: Mapped[str] = mapped_column(nullable=True)
@@ -59,6 +59,10 @@ class SeasonTeam(Base):
         lazy="selectin"
     )
 
+    __table_args__ = (
+        UniqueConstraint('season_id', 'team_id'),
+    )
+
 
 class Season(Base):
     __tablename__ = "seasons"
@@ -67,9 +71,10 @@ class Season(Base):
     year_start: Mapped[int] = mapped_column(index=True, nullable=False)
     year_end: Mapped[int] = mapped_column(index=True, nullable=False)
 
-    tournaments: Mapped["Tournament"] = relationship(
+    tournaments: Mapped[List["Tournament"]] = relationship(
         "Tournament",
-        back_populates="season"
+        back_populates="season",
+        lazy='selectin'
     )
     teams: Mapped[List["SeasonTeam"]] = relationship(
         "SeasonTeam",
@@ -101,7 +106,7 @@ class Tournament(Base):
     season: Mapped["Season"] = relationship(
         "Season",
         back_populates="tournaments",
-        lazy="selectin"
+        lazy="joined"
     )
     games: Mapped[List["Game"]] = relationship(
         "Game",
@@ -217,18 +222,19 @@ class Game(Base):
         "Team",
         back_populates="home_games",
         foreign_keys=home_team_id,
-        lazy="selectin"
+        lazy="joined"
     )
     visitor_team: Mapped["Team"] = relationship(
         "Team",
         back_populates="away_games",
         foreign_keys=visitor_team_id,
-        lazy="selectin"
+        lazy="joined"
     )
     arena: Mapped["Arena"] = relationship(
         "Arena",
         back_populates="games",
-        foreign_keys=arena_id
+        foreign_keys=arena_id,
+        lazy="joined"
     )
 
     def __str__(self):
