@@ -1,8 +1,9 @@
 import logging
+from contextlib import suppress
 from typing import List
 
 from fastapi_pagination.ext.sqlalchemy import apaginate
-from sqlalchemy import func, select, text, update, inspect
+from sqlalchemy import func, select, text, update, inspect, TextClause
 from sqlalchemy.exc import IntegrityError
 
 from core.db.base import Base
@@ -19,31 +20,45 @@ class DbService:
         if model:
             self.model = model
 
-
     @property
-    def model_pk_name(self)->str:
+    def model_pk_name(self) -> str:
         return inspect(self.model).primary_key[0].name
 
-
     def _build_stmt(self, expr, **kwargs):
+        queries = {}
         stmt = expr(self.model)
-        if 'filter' in kwargs and isinstance(kwargs['filter'], list):
-            stmt = stmt.filter(*kwargs['filter'])
-        if 'where' in kwargs and isinstance(kwargs['where'], list):
-            stmt = stmt.where(*kwargs['where'])
+        for q in ['filter', 'where', 'values', 'limit', 'order_by', 'options']:
+            queries[q] = kwargs.pop(q, None)
         if 'filter_by' in kwargs and isinstance(kwargs['filter_by'], dict):
-            stmt = stmt.filter_by(**kwargs['filter_by'])
-        if 'values' in kwargs and isinstance(kwargs['values'], dict):
-            stmt = stmt.values(**kwargs['values'])
-        if 'limit' in kwargs and isinstance(kwargs['limit'], int):
-            stmt = stmt.limit(kwargs['limit'])
-        if hasattr(expr, 'order_by'):
-            if not 'order_by' in kwargs:
-                kwargs['order_by'] = [text(f'{self.model_pk_name} desc')]
-            elif not isinstance(kwargs['order_by'], list):
-                kwargs['order_by'] = [kwargs['order_by']]
-            stmt = stmt.order_by(*kwargs['order_by'])
+            kwargs.update(kwargs.pop('filter_by', {}))
+        queries['filter_by'] = kwargs
+        if isinstance(queries['filter'], list):
+            stmt = stmt.filter(*queries['filter'])
+        if isinstance(queries['where'], list):
+            stmt = stmt.where(*queries['where'])
+        if queries['filter_by'] and isinstance(queries['filter_by'], dict):
+            stmt = stmt.filter_by(**queries['filter_by'])
+        if queries['values'] and isinstance(queries['values'], dict):
+            stmt = stmt.values(**queries['values'])
+        if isinstance(queries['limit'], int):
+            stmt = stmt.limit(queries['limit'])
+        if isinstance(queries['options'], list):
+            stmt = stmt.options(queries['options'])
+        if hasattr(stmt, 'order_by'):
+            stmt = stmt.order_by(*self._prepare_order_expr_list(queries.get('order_by', [])))
         return stmt
+
+    def _prepare_order_expr_list(self, order_by):
+        expr_list = []
+        if not order_by:
+            expr_list.append(text(f'{self.model_pk_name} desc'))
+        elif isinstance(order_by, str):
+            expr_list.append(text(order_by))
+        elif isinstance(order_by, list):
+            for expr in order_by:
+                with suppress(Exception):
+                    expr_list.append(text(expr) if not isinstance(expr, TextClause) else expr)
+        return expr_list
 
     def _select(self, **kwargs):
         return self._build_stmt(select, **kwargs)
@@ -82,9 +97,9 @@ class DbService:
                             update, filter_by={self.model_pk_name: obj.pk}, values=updates
                         ))
                     else:
-                        skip_commit=True
+                        skip_commit = True
             else:
-                obj = self.model(**kwargs, **defaults)
+                obj = self.model(**kwargs | defaults)
                 self.db.add(obj)
                 created = True
             if not skip_commit:
@@ -104,5 +119,3 @@ class DbService:
     async def add_all(self, objects: List[dict]):
         self.db.add_all([self.model(**model_dict) for model_dict in objects])
         await self.db.commit()
-
-

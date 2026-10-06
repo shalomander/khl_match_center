@@ -18,6 +18,6 @@ def _make_engine() -> AsyncEngine:
 
 
 engine: AsyncEngine = _make_engine()
-SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
 
 
