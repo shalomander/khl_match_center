@@ -24,7 +24,12 @@ class TournamentCalendarReader(KhlReader):
     def games(self):
         if not self._games:
             for week in self.calendar_data.get('GAMES', []):
-                self._games.extend([game for day in week.values() if day is not None for game in day ])
+                if not isinstance(week, dict):
+                    continue
+                self._games.extend([
+                    game for day in week.values() if day is not None
+                    for game in day if game['tnId'] == self.tournament_id
+                ])
         return self._games
 
     @property
