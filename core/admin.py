@@ -12,7 +12,7 @@ from apps.users.admin import UserAdmin
 from apps.users.models import User
 from core.db.service import logger
 from core.db.session import SessionLocal
-from core.utils.pkg import get_modules
+from core.utils import get_modules
 
 
 class AdminAuth(AuthenticationBackend):

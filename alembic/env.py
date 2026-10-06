@@ -27,7 +27,7 @@ target_metadata = Base.metadata
 
 import pyclbr
 
-from core.utils.pkg import get_modules
+from core.utils import get_modules
 
 logger = logging.getLogger()
 

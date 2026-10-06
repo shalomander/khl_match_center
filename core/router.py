@@ -3,7 +3,7 @@ import logging
 
 from fastapi import APIRouter
 
-from core.utils.pkg import get_modules
+from core.utils import get_modules
 
 logger=logging.getLogger()
 

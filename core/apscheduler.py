@@ -6,7 +6,7 @@ from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from core.utils.pkg import get_modules
+from core.utils import get_modules
 
 logger = logging.getLogger()
 
