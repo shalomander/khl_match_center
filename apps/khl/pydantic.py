@@ -23,3 +23,13 @@ class CalendarGame(BaseModel):
             values['start_at'] = datetime.fromisoformat(dt_str).astimezone(timezone.utc).replace(tzinfo=None)
         values['is_over'] = values.get('approved', 0)==1
         return values
+
+class BroadcastGameInfo(BaseModel):
+    arena_id: int|None
+    attendance: int|None
+    home_score: int|None
+    visitor_score: int|None
+    ots: str|None
+    is_over: bool = Field(default=False)
+    broadcast_processed: bool = Field(default=False, alias="is_over")
+    # После окончания игры трансляция не обновляется, broadcast_processed=is_over

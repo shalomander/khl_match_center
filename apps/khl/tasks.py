@@ -4,19 +4,20 @@ from datetime import datetime
 
 from apscheduler.triggers.cron import CronTrigger
 
-from apps.khl.models import Team, SeasonTeam, Season, Tournament
+from apps.khl.models import Team, SeasonTeam, Season, Tournament, Game
+from apps.khl.processors.game_broadcast import GameBroadcastDataProcessor
+from apps.khl.readers.game_broadcast import GameBroadcastReader
 from apps.khl.readers.seasons import SeasonsReader
 from apps.khl.readers.tournament_calendar import TournamentCalendarReader
 from apps.khl.services import TournamentService, GameService, ArenaService
 from core.db.service import DbService
 from core.db.session import SessionLocal
-from core.utils import singleton_task
+from core.utils import singleton_task, task_info
 
 logger = logging.getLogger()
 
-
+@task_info("Обновление списка сезонов КХЛ")
 async def fetch_khl_seasons():
-    logger.warning(f'Обновление списка сезонов КХЛ...')
     async with SessionLocal() as session:
         async with SeasonsReader() as sr:
             if sr.errors:
@@ -54,6 +55,7 @@ async def fetch_khl_seasons():
                         logger.error(e)
 
 @singleton_task
+@task_info('Получение календарей необработанных турниров')
 async def fetch_calendars_for_empty_tournaments():
     async with SessionLocal() as session:
         trn_svc = TournamentService(session)
@@ -64,8 +66,9 @@ async def fetch_calendars_for_empty_tournaments():
 
 
 @singleton_task
+@task_info("Обновление календаря турнира")
 async def fetch_calendar(tournament: int | Tournament = None):
-    async with SessionLocal() as session:
+    async with SessionLocal.begin() as session:
         trn_svc = TournamentService(session)
         arn_svc = ArenaService(session)
         gm_svc = GameService(session)
@@ -79,10 +82,22 @@ async def fetch_calendar(tournament: int | Tournament = None):
                 if not tcr.errors:
                     await arn_svc.update_from_calendar(tcr.arenas)
                     await gm_svc.update_from_calendar(tcr.games)
-                    logger.warning(f'Календаря турнира {tournament.khl_id} обновлен')
+                    logger.warning(f'Календарь турнира {tournament.khl_id} обновлен')
                 else:
                     logger.error(f'Ошибка получения календаря турнира {tournament.khl_id}: {tcr.errors}')
 
+@singleton_task
+@task_info("Обработка трансляции игры")
+async def fetch_broadcast(game: Game):
+    async with SessionLocal.begin() as session:
+        logger.warning(f'Обработка трансляции игры {game.khl_id}...')
+        async with GameBroadcastReader(game.tournament.khl_id, game.khl_id) as gbr:
+            if not gbr.errors:
+                await GameBroadcastDataProcessor(session, gbr, game).update_db()
+                logger.warning(f'Трансляция игры {game.khl_id} обработана')
+            else:
+                logger.warning(f'Ошибка обработки трансляции игры {game.khl_id}: {gbr.errors}')
+            return gbr
 
 tasks = [
     # {

@@ -187,11 +187,13 @@ class Game(Base):
 
     khl_id: Mapped[int] = mapped_column(primary_key=True, unique=True, autoincrement=False)
     start_at: Mapped[datetime.datetime] = mapped_column(index=True, nullable=True)
-    finish_at: Mapped[datetime.datetime] = mapped_column(index=True, nullable=True)
     home_score: Mapped[int] = mapped_column(nullable=True)
     visitor_score: Mapped[int] = mapped_column(nullable=True)
+    attendance: Mapped[int] = mapped_column(nullable=True)
     ots: Mapped[str] = mapped_column(String(2), nullable=True)
-    is_over: Mapped[bool] = mapped_column(index=True, nullable=False, server_default=sql.false())
+    is_over: Mapped[bool] = mapped_column(nullable=False, server_default=sql.false())
+    broadcast_processed: Mapped[bool] = mapped_column(nullable=False, server_default=sql.false())
+    protocol_processed: Mapped[bool] = mapped_column(nullable=False, server_default=sql.false())
 
     tournament_id: Mapped[int] = mapped_column(
         ForeignKey("tournaments.khl_id", ondelete='SET NULL'),
@@ -230,6 +232,18 @@ class Game(Base):
         foreign_keys=visitor_team_id,
         lazy="joined"
     )
+    home_lineup: Mapped[List["GameLineup"]] = relationship(
+        "GameLineup",
+        primaryjoin="and_(Game.khl_id == GameLineup.game_id, GameLineup.team_side == 'A')",
+        order_by="GameLineup.line_number",
+        overlaps="visitor_lineup"
+    )
+    visitor_lineup: Mapped["GameLineup"] = relationship(
+        "GameLineup",
+        primaryjoin="and_(Game.khl_id == GameLineup.game_id, GameLineup.team_side == 'B')",
+        order_by="GameLineup.line_number",
+        overlaps="home_lineup"
+    )
     arena: Mapped["Arena"] = relationship(
         "Arena",
         back_populates="games",
@@ -239,3 +253,24 @@ class Game(Base):
 
     def __str__(self):
         return f"Игра {self.khl_id}" if self.khl_id is not None else "Новая игра"
+
+
+class GameLineup(Base):
+    __tablename__ = "game_lineups"
+
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.khl_id", ondelete='CASCADE'),
+        nullable=False,
+        primary_key=True
+    )
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("teams.khl_id", ondelete='SET NULL'),
+        nullable=False,
+        primary_key=True
+    )
+    team_side: Mapped[str] = mapped_column(String(1), primary_key=True, nullable=False)
+    line_number: Mapped[int] = mapped_column(nullable=False)
+
+    team = relationship(
+        "Team",
+    )

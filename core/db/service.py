@@ -4,10 +4,11 @@ from typing import List
 
 from fastapi_pagination.ext.sqlalchemy import apaginate
 from sqlalchemy import func, select, text, update, inspect, TextClause
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, DatabaseError
 
 from core.db.base import Base
 from core.dependencies import DBDependency
+from core.utils import get_obj_diff
 
 logger = logging.getLogger()
 
@@ -84,31 +85,28 @@ class DbService:
     async def paginate(self, **kwargs):
         return await apaginate(self.db, self._select(**kwargs))
 
+
     async def _do_or_create(self, action: str, **kwargs):
-        created = False
-        skip_commit = False
+        created, refresh = False, False
         defaults = kwargs.pop('defaults', {})
         try:
-            if obj := await self.first(filter_by=kwargs):
-                if action == 'update':
-                    updates = {k: v for k, v in defaults.items() if hasattr(obj, k) and getattr(obj, k, None) != v}
-                    if updates:
-                        await self.db.execute(self._build_stmt(
-                            update, filter_by={self.model_pk_name: obj.pk}, values=updates
-                        ))
-                    else:
-                        skip_commit = True
-            else:
-                obj = self.model(**kwargs | defaults)
-                self.db.add(obj)
-                created = True
-            if not skip_commit:
-                await self.db.commit()
-                await self.db.refresh(obj)
-            return obj, created
-        except IntegrityError as e:
-            logger.error(f'Ошибка записи {self.model.__name__}: {e}. Откат транзакции')
-            await self.db.rollback()
+            async with self.db.begin_nested():
+                if obj := await self.first(filter_by=kwargs):
+                    if action == 'update':
+                        if (updates:=get_obj_diff(obj, defaults)) or True:
+                            logger.warning(f'обновление: {updates}')
+                            await self.db.execute(self._update(filter_by={self.model_pk_name: obj.pk}, values=updates))
+                            refresh=True
+                else:
+                    obj = self.model(**kwargs | defaults)
+                    self.db.add(obj)
+                    created = True
+                await self.db.flush()
+                if refresh:
+                    await self.db.refresh(obj)
+        except (DatabaseError, IntegrityError) as e:
+                logger.error(f'Ошибка записи {self.model.__name__}: {e}')
+        return obj, created
 
     async def get_or_create(self, **kwargs):
         return await self._do_or_create('get', **kwargs)
@@ -116,6 +114,11 @@ class DbService:
     async def update_or_create(self, **kwargs):
         return await self._do_or_create('update', **kwargs)
 
+    async def update(self, **kwargs):
+        if kwargs.get('values'):
+            async with self.db.begin_nested():
+                await self.db.flush(await self.db.execute(self._update(**kwargs)))
+
     async def add_all(self, objects: List[dict]):
         self.db.add_all([self.model(**model_dict) for model_dict in objects])
-        await self.db.commit()
+        await self.db.flush()
