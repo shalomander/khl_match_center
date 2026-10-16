@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class GameResponse(BaseModel):
+class Game(BaseModel):
     khl_id: int
     start_at: datetime
     home_team: GameTeam

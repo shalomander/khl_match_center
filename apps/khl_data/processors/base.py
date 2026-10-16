@@ -1,10 +1,7 @@
 import logging
 from abc import abstractmethod, ABC
-from typing import Type
 
 from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from apps.khl.readers.base import KhlReader
 
 logger = logging.getLogger()
 

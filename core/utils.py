@@ -4,6 +4,9 @@ import logging
 from copy import deepcopy
 from pathlib import Path
 
+from fastapi import HTTPException
+from starlette.status import HTTP_404_NOT_FOUND
+
 logger = logging.getLogger()
 running_tasks = {}
 
@@ -40,5 +43,9 @@ def get_modules(path):
 
 def get_obj_diff(obj, new_values: dict):
     diff = {k: v for k, v in new_values.items() if hasattr(obj, k) and getattr(obj, k, None) != v}
-    logger.warning(f'Obj {obj} update diff: {diff}')
     return diff
+
+def get_or_raise_404(value):
+    if not value:
+        raise HTTPException(status_code=HTTP_404_NOT_FOUND)
+    return value

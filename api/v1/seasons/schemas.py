@@ -3,7 +3,7 @@ from typing import List
 from pydantic import BaseModel, Field
 
 
-class SeasonResponse(BaseModel):
+class Season(BaseModel):
     id: int
     year_start: int
     year_end: int

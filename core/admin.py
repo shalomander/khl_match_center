@@ -10,7 +10,6 @@ from starlette.responses import RedirectResponse
 
 from apps.users.admin import UserAdmin
 from apps.users.models import User
-from core.db.service import logger
 from core.db.session import SessionLocal
 from core.utils import get_modules
 
@@ -34,8 +33,6 @@ class AdminAuth(AuthenticationBackend):
         token = request.session.get("token")
         if not token:
             return False
-
-        # Check the token in depth
         return True
 
 

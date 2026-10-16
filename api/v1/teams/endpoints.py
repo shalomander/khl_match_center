@@ -1,14 +1,12 @@
 from fastapi import APIRouter
 from fastapi_pagination import Page
-from starlette.requests import Request
 
-from apps.khl.models import Team
-from core.db.service import DbService
-from core.dependencies import DBDependency
-from .schemas import TeamResponse
+from core.dependencies import TeamRepo
+from . import schemas
 
 router = APIRouter()
 
+
 @router.get("/", name="Список команд")
-async def get_teams_list(request: Request, db: DBDependency) -> Page[TeamResponse]:
-    return await (DbService(db, Team).paginate())
+async def get_teams_list(tm_repo: TeamRepo) -> Page[schemas.Team]:
+    return await tm_repo.paginate(order_by='name ASC')

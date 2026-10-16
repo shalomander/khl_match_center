@@ -4,13 +4,15 @@ from datetime import datetime
 
 from apscheduler.triggers.cron import CronTrigger
 
-from apps.khl.models import Team, SeasonTeam, Season, Tournament, Game
-from apps.khl.processors.game_broadcast import GameBroadcastDataProcessor
-from apps.khl.readers.game_broadcast import GameBroadcastReader
-from apps.khl.readers.seasons import SeasonsReader
-from apps.khl.readers.tournament_calendar import TournamentCalendarReader
-from apps.khl.services import TournamentService, GameService, ArenaService
-from core.db.service import DbService
+from apps.games.models import Game
+from apps.khl_data.processors.game_broadcast import GameBroadcastDataProcessor
+from apps.khl_data.processors.tournament_calendar import TournamentCalendarDataProcessor
+from apps.khl_data.readers.game_broadcast import GameBroadcastReader
+from apps.khl_data.readers.seasons import SeasonsReader
+from apps.khl_data.readers.tournament_calendar import TournamentCalendarReader
+from apps.teams.models import Team
+from apps.tournaments.models import Season, SeasonTeam, Tournament
+from apps.tournaments.repositories import TournamentRepository
 from core.db.session import SessionLocal
 from core.utils import singleton_task, task_info
 
@@ -22,32 +24,32 @@ async def fetch_khl_seasons():
         async with SeasonsReader() as sr:
             if sr.errors:
                 return
-            ssn_svc = DbService(session, Season)
-            trn_svc = TournamentService(session)
-            tm_svc = DbService(session, Team)
-            ssn_tm_svc = DbService(session, SeasonTeam)
+            ssn_repo = DbService(session, Season)
+            trn_repo = TournamentRepository(session)
+            tm_repo = DbService(session, Team)
+            ssn_tm_repo = DbService(session, SeasonTeam)
             updated_teams = []
             for season_data in sr.seasons[::-1]:
-                season, _ = await ssn_svc.get_or_create(
+                season, _ = await ssn_repo.get_or_create(
                     year_start=season_data.get('start'), year_end=season_data.get('end')
                 )
                 for tournament_data in season_data.get('tournaments', []):
-                    tournament, created = await trn_svc.get_or_create(
+                    tournament, created = await trn_repo.get_or_create(
                         khl_id=tournament_data.get('id'),
                         defaults={'part': tournament_data.get('part'), 'season_id': season.id}
                     )
                     if tournament_data.get('current') and not tournament.current:
-                        await trn_svc.set_current(tournament)
+                        await trn_repo.set_current(tournament)
                 for team_data in season_data.get('teams', []):
                     team_id = team_data.get('id')
                     db_action = f"{'get' if team_id in updated_teams else 'update'}_or_create"
                     updated_teams.append(team_id)
                     try:
-                        await getattr(tm_svc, db_action)(
+                        await getattr(tm_repo, db_action)(
                                 khl_id=team_data.get('id'),
                                 defaults={'name': team_data.get('name'), 'image': team_data.get('logo')}
                             )
-                        await ssn_tm_svc.get_or_create(
+                        await ssn_tm_repo.get_or_create(
                                 season_id=season.id, team_id=team_id,
                                 defaults={'name': team_data.get('name'), 'image': team_data.get('logo')}
                             )
@@ -58,33 +60,25 @@ async def fetch_khl_seasons():
 @task_info('Получение календарей необработанных турниров')
 async def fetch_calendars_for_empty_tournaments():
     async with SessionLocal() as session:
-        trn_svc = TournamentService(session)
+        trn_repo = TournamentRepository(session)
         await asyncio.gather(*[
             asyncio.create_task(fetch_calendar(et.khl_id))
-            for et in await trn_svc.all(where=[~trn_svc.model.games.any()])
+            for et in await trn_repo.all(where=[~trn_repo.model.games.any()])
         ])
 
 
 @singleton_task
-@task_info("Обновление календаря турнира")
+@task_info(f"Обновление календаря турнира")
 async def fetch_calendar(tournament: int | Tournament = None):
     async with SessionLocal.begin() as session:
-        trn_svc = TournamentService(session)
-        arn_svc = ArenaService(session)
-        gm_svc = GameService(session)
-        if tournament is None:
-            tournament = await trn_svc.get_current()
-        elif isinstance(tournament, int):
-            tournament = await trn_svc.first(khl_id=tournament)
+        trn_repo = TournamentRepository(session)
+        if not isinstance(tournament, trn_repo.model):
+            tournament = await trn_repo.get_one_or_current(tournament)
         if tournament:
             logger.warning(f'Обновление календаря турнира {tournament.khl_id}...')
             async with TournamentCalendarReader(tournament.khl_id) as tcr:
-                if not tcr.errors:
-                    await arn_svc.update_from_calendar(tcr.arenas)
-                    await gm_svc.update_from_calendar(tcr.games)
-                    logger.warning(f'Календарь турнира {tournament.khl_id} обновлен')
-                else:
-                    logger.error(f'Ошибка получения календаря турнира {tournament.khl_id}: {tcr.errors}')
+                await TournamentCalendarDataProcessor(session, tcr, tournament).update_db()
+
 
 @singleton_task
 @task_info("Обработка трансляции игры")
@@ -92,12 +86,9 @@ async def fetch_broadcast(game: Game):
     async with SessionLocal.begin() as session:
         logger.warning(f'Обработка трансляции игры {game.khl_id}...')
         async with GameBroadcastReader(game.tournament.khl_id, game.khl_id) as gbr:
-            if not gbr.errors:
-                await GameBroadcastDataProcessor(session, gbr, game).update_db()
-                logger.warning(f'Трансляция игры {game.khl_id} обработана')
-            else:
-                logger.warning(f'Ошибка обработки трансляции игры {game.khl_id}: {gbr.errors}')
+            await GameBroadcastDataProcessor(session, gbr, game).update_db()
             return gbr
+
 
 tasks = [
     # {

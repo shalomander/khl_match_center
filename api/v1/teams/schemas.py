@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
 
-class TeamResponse(BaseModel):
+class Team(BaseModel):
     khl_id: int
     name: str

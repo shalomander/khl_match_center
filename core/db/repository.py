@@ -1,25 +1,23 @@
 import logging
 from contextlib import suppress
-from typing import List
+from typing import List, TypeVar, Generic
 
 from fastapi_pagination.ext.sqlalchemy import apaginate
 from sqlalchemy import func, select, text, update, inspect, TextClause
 from sqlalchemy.exc import IntegrityError, DatabaseError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.base import Base
-from core.dependencies import DBDependency
 from core.utils import get_obj_diff
 
 logger = logging.getLogger()
 
+ModelT = TypeVar("ModelT")
 
-class DbService:
-    model: type[Base]
+class BaseRepository(Generic[ModelT]):
+    model: type[ModelT]
 
-    def __init__(self, db: DBDependency, model: type[Base] = None):
-        self.db = db
-        if model:
-            self.model = model
+    def __init__(self, session: AsyncSession):
+        self.session = session
 
     @property
     def model_pk_name(self) -> str:
@@ -68,42 +66,41 @@ class DbService:
         return self._build_stmt(update, **kwargs)
 
     async def count(self):
-        return await self.db.scalar(select(func.count()).select_from(self.model))
+        return await self.session.scalar(select(func.count()).select_from(self.model))
 
     async def is_empty(self):
         return (await self.count()) == 0
 
     async def exists(self, **kwargs):
-        return await self.db.scalar(select(self._build_stmt(select, **kwargs).exists()))
+        return await self.session.scalar(select(self._build_stmt(select, **kwargs).exists()))
 
     async def all(self, **kwargs):
-        return await self.db.scalars(self._select(**kwargs))
+        return await self.session.scalars(self._select(**kwargs))
 
     async def first(self, **kwargs):
-        return await self.db.scalar(self._select(**kwargs).limit(1))
+        return await self.session.scalar(self._select(**kwargs).limit(1))
 
     async def paginate(self, **kwargs):
-        return await apaginate(self.db, self._select(**kwargs))
-
+        # raise Exception(str(kwargs))
+        return await apaginate(self.session, self._select(**kwargs))
 
     async def _do_or_create(self, action: str, **kwargs):
         created, refresh = False, False
         defaults = kwargs.pop('defaults', {})
         try:
-            async with self.db.begin_nested():
+            async with self.session.begin_nested():
                 if obj := await self.first(filter_by=kwargs):
                     if action == 'update':
-                        if (updates:=get_obj_diff(obj, defaults)) or True:
-                            logger.warning(f'обновление: {updates}')
-                            await self.db.execute(self._update(filter_by={self.model_pk_name: obj.pk}, values=updates))
+                        if updates:=get_obj_diff(obj, defaults):
+                            await self.session.execute(self._update(filter_by={self.model_pk_name: obj.pk}, values=updates))
                             refresh=True
                 else:
                     obj = self.model(**kwargs | defaults)
-                    self.db.add(obj)
+                    self.session.add(obj)
                     created = True
-                await self.db.flush()
+                await self.session.flush()
                 if refresh:
-                    await self.db.refresh(obj)
+                    await self.session.refresh(obj)
         except (DatabaseError, IntegrityError) as e:
                 logger.error(f'Ошибка записи {self.model.__name__}: {e}')
         return obj, created
@@ -116,9 +113,10 @@ class DbService:
 
     async def update(self, **kwargs):
         if kwargs.get('values'):
-            async with self.db.begin_nested():
-                await self.db.flush(await self.db.execute(self._update(**kwargs)))
+            async with self.session.begin_nested():
+                await self.session.execute(self._update(**kwargs))
+                await self.session.flush()
 
     async def add_all(self, objects: List[dict]):
-        self.db.add_all([self.model(**model_dict) for model_dict in objects])
-        await self.db.flush()
+        self.session.add_all([self.model(**model_dict) for model_dict in objects])
+        await self.session.flush()
