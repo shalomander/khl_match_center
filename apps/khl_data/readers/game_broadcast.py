@@ -14,7 +14,6 @@ class GameBroadcastReader(KhlReader):
         self.game_id = game_id
         self._goals_extracted = False
         self._penalties_extracted = False
-        self._ccd = {}
         # source data
         self.game_data = None
         self.header_data = None
@@ -38,8 +37,6 @@ class GameBroadcastReader(KhlReader):
         self.visitor_coach = {}
         self.visitor_player_stats = {}
         self.visitor_team_stats = {}
-        self.main_referees = []
-        self.linesmen = []
         self._goals = []
         self._disallowed_goals = []
         self._video_reviews = []
@@ -57,17 +54,18 @@ class GameBroadcastReader(KhlReader):
         self._extract_api_data()
 
     def _extract_api_data(self):
-        self.vr_reasons = self.game_data.get('TEXT', {}).get('vr_reason', {})
-        self.vr_initiators = self.game_data.get('TEXT', {}).get('vr_ini', {})
-        self.game_data = self.game_data.get('game', {})
-        self._extract_teams()
-        self._extract_text_events()
-        # self._extract_playbyplay_events()
-        self._extract_referees()
-        self._extract_players()
+        if self.game_data:
+            self.vr_reasons = self.game_data.get('TEXT', {}).get('vr_reason', {})
+            self.vr_initiators = self.game_data.get('TEXT', {}).get('vr_ini', {})
+            self.game_data = self.game_data.get('game', {})
+            self._extract_teams()
+            self._extract_text_events()
+            # self._extract_playbyplay_events()
+            self._extract_referees()
+            self._extract_players()
 
     def _extract_text_events(self):
-        for period_data in reversed(self.game_data.get('tab_events')):
+        for period_data in reversed(self.game_data.get('tab_events', [])):
             period = period_data.get('period')
             for event in reversed(period_data.get('events', ())):
                 event_type = event.get('type', 'unknown')
@@ -78,28 +76,30 @@ class GameBroadcastReader(KhlReader):
     def _extract_playbyplay_events(self):
         game_legend = self.game_data.get('tab_playbyplay', {}).get('gameLegend', {})
         for period, period_data in game_legend.items():
-            for event in reversed(period_data):
-                event_type = event.get('type', 'unknown')
-                if event_type not in self.playbyplay_events:
-                    self.playbyplay_events[event_type] = []
-                self.playbyplay_events[event_type].append({**event, 'period': period})
+            if isinstance(period_data, list):
+                for event in reversed(period_data):
+                    event_type = event.get('type', 'unknown')
+                    if event_type not in self.playbyplay_events:
+                        self.playbyplay_events[event_type] = []
+                    self.playbyplay_events[event_type].append({**event, 'period': period})
 
     def _extract_teams(self):
-        teams = self.game_data.get('teams')
+        teams = self.game_data.get('teams', {})
         self.home_team, self.visitor_team = teams.get('home', {}), teams.get('visitor', {})
-        extra_info = self.header_data.get('game', {})
-        self.home_team.update({
-            'khl_id': extra_info.get('teama'),
-            'name_en': extra_info.get('homeName_en'),
-            'short_name': extra_info.get('homeName_l3'),
-            'short_name_en': extra_info.get('homeName_l3_en'),
-        })
-        self.visitor_team.update({
-            'khl_id': extra_info.get('teamb'),
-            'name_en': extra_info.get('visitorName_en'),
-            'short_name': extra_info.get('visitorName_l3'),
-            'short_name_en': extra_info.get('visitorName_l3_en'),
-        })
+        if self.header_data:
+            extra_info = self.header_data.get('game', {})
+            self.home_team.update({
+                'khl_id': extra_info.get('teama'),
+                'name_en': extra_info.get('homeName_en'),
+                'short_name': extra_info.get('homeName_l3'),
+                'short_name_en': extra_info.get('homeName_l3_en'),
+            })
+            self.visitor_team.update({
+                'khl_id': extra_info.get('teamb'),
+                'name_en': extra_info.get('visitorName_en'),
+                'short_name': extra_info.get('visitorName_l3'),
+                'short_name_en': extra_info.get('visitorName_l3_en'),
+            })
 
     def _extract_players(self):
         players = self.game_data.get('players', {})
@@ -135,7 +135,7 @@ class GameBroadcastReader(KhlReader):
 
     @property
     def info(self):
-        if not self._info:
+        if not self._info and self.header_data:
             info = self.header_data.get('game', {})
             online = self.header_data.get('online', {})
             self._info = {
@@ -148,7 +148,7 @@ class GameBroadcastReader(KhlReader):
                 'home_score': online.get('homeScore', info.get('homeScore')),
                 'visitor_score': online.get('visitorScore', info.get('visitorScore')),
                 'ots': info.get('ots'),
-                'is_over': info.get('approved', 0)==1
+                'is_over': info.get('approved', 0) == 1
             }
         return self._info
 
@@ -158,7 +158,7 @@ class GameBroadcastReader(KhlReader):
 
     @property
     def lineup(self):
-        if not (self.home_lineup or self.visitor_lineup):
+        if not (self.home_lineup or self.visitor_lineup) and self.game_data:
             lineups = {'A': {}, 'B': {}}
             start_gk = {'A': self.home_gk_jn, 'B': self.visitor_gk_jn}
             for player in self.players_by_id.values():
@@ -179,7 +179,7 @@ class GameBroadcastReader(KhlReader):
 
     @property
     def coaches(self):
-        if not (self.home_coach or self.visitor_coach):
+        if not (self.home_coach or self.visitor_coach) and self.header_data:
             for team_ab, coach in self.header_data.get('proto', {}).get('coaches', {}).items():
                 if isinstance(coach, dict):
                     coach['id'] = self._int(coach.pop('link').strip('/').split('/')[-1])
@@ -188,7 +188,7 @@ class GameBroadcastReader(KhlReader):
 
     @property
     def player_stats(self):
-        if not (self.home_player_stats or self.visitor_player_stats):
+        if not (self.home_player_stats or self.visitor_player_stats) and self.game_data:
             stats_map = {'A': self.home_player_stats, 'B': self.visitor_player_stats}
             stats = self.game_data.get('tab_stats', {}).get('playerstats', {})
             for t in ('A', 'B'):
@@ -209,7 +209,7 @@ class GameBroadcastReader(KhlReader):
 
     @property
     def team_stats(self):
-        if not (self.home_team_stats or self.visitor_team_stats):
+        if not (self.home_team_stats or self.visitor_team_stats) and self.game_data:
             stats = self.game_data.get('tab_stats', {}).get('teamstats', {})
             for period_idx, period_stats in enumerate(stats):
                 period_name = self._get_period_shortname(period_idx)
@@ -394,7 +394,7 @@ class GameBroadcastReader(KhlReader):
         stats['tie'] = stats.pop('SFTE', '00:00(0)').split('(')[0]
         stats['tipp'] = stats.pop('SFTPP', '00:00(0)').split('(')[0]
         stats['tish'] = stats.pop('SFTSH', '00:00(0)').split('(')[0]
-        stats['tien'] = stats.pop('TIEN', '00:00(0)').split('(')[0]
+        stats['tien'] = stats.pop('SFTEN', '00:00(0)').split('(')[0]
         stats['avg_spd'] = stats.pop('as', None)
         stats['d'] = stats.pop('dt', None)
         stats['tka'] = stats.pop('fa', None)
@@ -406,16 +406,24 @@ class GameBroadcastReader(KhlReader):
         stats['sog_pct'] = round(stats['g'] / stats['sog'] * 100, 2) if stats['sog'] > 0 else 0
         stats['toa'] = stats.pop('tiams', None)
         stats['ms'] = stats.pop('ts', None)
+        for field in ['tie', 'tien', 'tish', 'tipp', 'toa', 'toi']:
+            if field in stats and not stats[field]:
+                stats[field] = "00:00"
         return stats
 
     def _transform_team_stats(self, stats: dict) -> dict:
-        for k, v in {'hit': 'hits', 'pintc': 'pintc', 'tka': 'fa', 'pls': 'gva', 'toa': 'tiams', 'tie': 'TIE',
-                     'tien': 'TIEN', 'ccd': 'contestedControlDuration', 'tish': 'TISH', 'tipp': 'TIPP'}.items():
-            stats[k] = stats.pop(v, None)
+        for k, v in {
+            'hit': 'hits', 'pintc': 'p_intc', 'tka': 'fa', 'pls': 'gva', 'toa': 'tiams', 'tie': 'TIE', 'tien': 'TIEN',
+            'ccd': 'contestedControlDuration', 'tish': 'TISH', 'tipp': 'TIPP', 'tcd': 'teamControlDuration',
+            'd': 'distance'
+        }.items():
+            value = stats.pop(v, None)
+            if not value and k in ['tie', 'tien', 'tish', 'tipp']:
+                stats[k] = '00:00'
+            else:
+                stats[k] = value
         stats['sog'] = stats.pop('shots', 0)
         stats['sog_pct'] = round(stats['g'] / stats['sog'] * 100, 2) if stats['sog'] > 0 else 0
-        stats['tcd'] = stats.pop('homeTeamControlDuration', stats.pop('awayTeamControlDuration', None))
-        stats['d'] = stats.pop('dtA', stats.pop('dtB', None))
         stats.update({'pn': 0, 'shg': 0, 'ppg': 0})
         return stats
 
@@ -445,7 +453,7 @@ class GameBroadcastReader(KhlReader):
             stat_obj = self.home_team_stats if goal.get('team_side') == 'A' else self.visitor_team_stats
             if goal['period'] in periods:
                 if (pmg := goal.get('pmg', 0)) > 0:
-                    stat_obj[period]['ppg'] += 1
+                    stat_obj[goal.get('period')]['ppg'] += 1
                     stat_obj['total']['ppg'] += 1
                 elif pmg < 0:
                     stat_obj[goal.get('period')]['shg'] += 1

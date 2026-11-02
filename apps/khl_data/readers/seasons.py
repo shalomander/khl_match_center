@@ -42,7 +42,7 @@ class SeasonsReader(KhlReader):
 
     async def _extract_season(self, season):
         payload = f'{self.api_payload}&values[season]={season}'
-        async with self.session.post(self.filters_api_url, headers=self.API_HEADERS, data=payload) as resp:
+        async with self._session.post(self.filters_api_url, headers=self.API_HEADERS, data=payload) as resp:
             if resp.status == 200 and (api_data := await resp.json()) and api_data.get('status') == 'success':
                 tournaments = api_data.get('data', {}).get('LIST', {}).get('tournament', {}).get('VALUE', [])
                 teams = api_data.get('data', {}).get('LIST', {}).get('clubs', {}).get('VALUE', [])

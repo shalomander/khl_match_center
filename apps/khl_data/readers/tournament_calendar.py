@@ -3,7 +3,7 @@ from .base import KhlReader
 
 class TournamentCalendarReader(KhlReader):
 
-    def __init__(self, tournament_id,  khl_domain='www.khl.ru'):
+    def __init__(self, tournament_id, khl_domain='www.khl.ru'):
         super().__init__()
         # reader vars
         self.api_payload = f'values[tournament]={tournament_id}'
@@ -11,10 +11,10 @@ class TournamentCalendarReader(KhlReader):
         self.calendar_api_url = f'https://{khl_domain}/rest/calendar/list/'
         self.tournament_id = tournament_id
         # source data
-        self.calendar_data=None
+        self.calendar_data = None
         # output data
-        self._arenas=[]
-        self._games=[]
+        self._arenas = []
+        self._games = []
 
     async def _run_ops(self):
         self.api_payload += f'&sessid={self.khl_sessid}'
